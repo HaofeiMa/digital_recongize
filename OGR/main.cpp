@@ -493,8 +493,8 @@ void rotate_Demo(Mat& image, double angle) {
 	M = getRotationMatrix2D(Point2f(w / 2, h / 2), angle, 1.0);	//定义变换矩阵M
 	double cos = abs(M.at<double>(0, 0));	//求cos值
 	double sin = abs(M.at<double>(0, 1));	//求sin值
-	int nw = cos * w + sin * h;		//计算新的长、宽
-	int nh = sin * w + cos * h;
+	int nw = abs(cos * w - sin * h) / abs(cos * cos - sin * sin);		//计算新的长、宽
+	int nh = abs(cos * h - sin * w) / abs(cos * cos - sin * sin);
 	M.at<double>(0, 2) += (nw / 2 - w / 2);		//计算新的中心
 	M.at<double>(1, 2) += (nh / 2 - h / 2);
 	warpAffine(image, image, M, Size(nw, nh), INTER_LINEAR, 0, Scalar(0, 0, 0));
