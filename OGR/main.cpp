@@ -1,6 +1,6 @@
 /*
 尚存问题：
-1. 数字1轮廓无法正常提取
+1. 数字1轮廓提取困难
 */
 
 #include <opencv2/opencv.hpp>
@@ -20,7 +20,7 @@ int getRowSum(Mat src, int row);//获得行像素点和
 int getPixelSum(Mat& image);	//获得所有像素点和
 int imgMatch(Mat& image, int& rate, int& num);		//模板匹配
 int cutLeft(Mat& src, Mat& leftImg, Mat& rightImg);	//左右切割
-int cutTop(Mat& src, Mat& dstImg);	//上下切割
+int cutTop(Mat& src, Mat& dstImg, Mat& bottomImg);	//上下切割
 int getSubtract(Mat& src);		//两张图片相减
 void rotate_Demo(Mat& image, double angle);	//图像旋转
 
@@ -32,7 +32,6 @@ int main() {
 	VideoCapture capture(1);	//创建VideoCapture类
 	int frame_width = capture.get(CAP_PROP_FRAME_WIDTH);	//获取摄像头的宽、高、帧数、FPS
 	int frame_height = capture.get(CAP_PROP_FRAME_HEIGHT);
-
 	
 	//摄像头读取
 	Mat frame;
@@ -61,6 +60,8 @@ int main() {
 		double LengthTemp;     //中间变量
 		float  angle = 0;      //记录倾斜角度
 		float  angleTemp = 0;
+		double location_x = 0.0;
+		double location_y = 0.0;
 		vector<vector<Point>> contours;
 		vector<Vec4i>hierarchy;
 		findContours(binImg, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
@@ -102,13 +103,14 @@ int main() {
 				{
 					rectangle(frame, rect, Scalar(0, 0, 255), 2, 8, 0);
 					if (rect.width > 100 && rect.height > 100 && axisShortTemp>100) {
-						rect.x += 30;
-						rect.y += 30;
-						rect.width -= 30;
-						rect.height -= 30;
+						rect.x += 40;
+						rect.y += 40;
+						rect.width -= 40;
+						rect.height -= 40;
 					}
 					imshow("Video", frame);    //显示最终结果图
-
+					location_x = rect.x + rect.width / 2;
+					location_y = rect.y + rect.height / 2;
 					Mat a4Img = frame(rect);
 					Mat a4binImg;
 					cvtColor(a4Img, a4binImg, CV_BGR2GRAY);   //将形态学处理之后的图像转化为灰度图像
@@ -138,29 +140,30 @@ int main() {
 
 					imshow("A4", a4binImg);
 
+
 					Mat num[20];
-					int output[3] = {-1,-1,-1};
-					int output_flag = 0;
+					int output1[3] = {-1,-1,-1};
+					int output1_flag = 0;
 					int matchingNum = 0;
 					int matchingRate = 0;
+					int matchflag = 0;
 					for (int j = 0; j < i; j++) {
 						a4binImg(a4rect[j]).copyTo(num[j]);
 						imshow("num", num[j]);
 						imgMatch(num[j], matchingRate, matchingNum);
 						if (matchingRate < 400000) {
-							output[output_flag] = matchingNum;
-							output_flag++;
-							if (output[0] >= 0 && output[1] >= 0 && output[2] >= 0) {
-								cout << output[0] * 100 + output[1] * 10 + output[2] << endl;
-								output_flag = 0;
-								output[0] = -1;
-								output[1] = -1;
-								output[2] = -1;
+							output1[output1_flag++] = matchingNum;
+							if (output1_flag>=3) {
+								cout << "识别数字：" << output1[0] * 100 + output1[1] * 10 + output1[2] << "\t坐标位置：[" << location_x << ", " << location_y << "]" << endl;
+								output1_flag = 0;
+								output1[0] = -1;
+								output1[1] = -1;
+								output1[2] = -1;
+								matchflag = 1;
 							}
 							//imwrite(to_string(matchingNum) + ".jpg", num[j]);
 						}
 					}
-					cout << endl;
 					/*****************************************************/
 
 					//内部再识别
@@ -281,41 +284,43 @@ int main() {
 					}
 					*/
 
+								
 					//行切识别数字
-					/*
-					Mat leftImg, rightImg, topImg, bottomImg;
-					int leftRes = cutLeft(a4binImg, leftImg, rightImg);
-					int matchNum = 0, matchRate = 0;
-					cout << "begin cutting" << leftRes << endl;
-					while (leftRes == 0)
-					{
-						cout << "leftCutting" << endl;
-						//	char nameLeft[10];
-						//	sprintf(nameLeft, "%dLeft", i);
-						//	char nameRight[10];
-						//	sprintf(nameRight, "%dRight", i);
-						//	i++;
-						//imshow(nameLeft, leftImg);
-						//	stringstream ss;
-						//	ss << nameLeft;
-						//	imwrite("D:\\" + ss.str() + ".jpg", leftImg);
-						//	ss >> nameLeft;
-						int topRes = cutTop(rightImg, topImg, bottomImg);
-						while (topRes == 0) {
-							cout << "TopCutting" << endl;
-							Mat srcTmp = topImg.clone();
-							imgMatch(bottomImg, matchNum, matchRate);//数字识别
-							imshow("num", bottomImg);
-							if (matchRate < 300000) {
-								cout << "识别数字：" << matchNum << "\t\t匹配度：" << matchRate << endl;
-								//imwrite(to_string(matchingNum) + ".jpg", num[j]);
+					if (matchflag == 0) {
+						Mat leftImg, rightImg, topImg, bottomImg;
+						int topRes = cutTop(a4binImg, topImg, bottomImg);
+						int matchNum = -1, matchRate = 10e6;
+						int output2[3] = { -1,-1,-1 };
+						int output2_flag = 0;
+						while (topRes == 0)
+						{
+							int leftRes = cutLeft(topImg, leftImg, rightImg);
+							while (leftRes == 0) {
+								imgMatch(leftImg, matchRate, matchNum);//数字识别
+								//getSubtract(topImg);
+								//imshow("num", leftImg);
+								if (matchRate < 200000) {
+									output2[output2_flag++] = matchNum;
+									if (output2_flag >= 3) {
+										cout << "识别数字：" << output2[0] * 100 + output2[1] * 10 + output2[2] << "\t坐标位置：[" << location_x << ", " << location_y << "]" << endl;
+										output2_flag = 0;
+										output2[0] = -1;
+										output2[1] = -1;
+										output2[2] = -1;
+									}
+								}
+								Mat srcTmp = rightImg.clone();
+								leftRes = cutLeft(srcTmp, leftImg, rightImg);
 							}
+							Mat srcTmp = bottomImg.clone();
 							topRes = cutTop(srcTmp, topImg, bottomImg);
+							output2_flag = 0;
+							output2[0] = -1;
+							output2[1] = -1;
+							output2[2] = -1;
 						}
-						Mat srcTmp = leftImg.clone();
-						leftRes = cutLeft(srcTmp, leftImg, rightImg);
 					}
-					*/
+					
 					
 
 
@@ -501,7 +506,7 @@ int cutLeft(Mat& src, Mat& leftImg, Mat& rightImg)
 	{
 		int colValue = getColSum(src, i);
 		//cout <<i<<" th "<< colValue << endl;
-		if (colValue > 0)
+		if (colValue > 550)
 		{
 			left = i;
 			break;
@@ -517,7 +522,7 @@ int cutLeft(Mat& src, Mat& leftImg, Mat& rightImg)
 	{
 		int colValue = getColSum(src, i);
 		//cout << i << " th " << colValue << endl;
-		if (colValue == 0)
+		if (colValue < 550)
 		{
 			right = i;
 			break;
@@ -528,11 +533,10 @@ int cutLeft(Mat& src, Mat& leftImg, Mat& rightImg)
 	leftImg = src(rectLeft).clone();
 	Rect rectRight(right, 0, src.cols - right, src.rows);
 	rightImg = src(rectRight).clone();
-	cutTop(leftImg, leftImg);
 	return 0;
 }
 
-int cutTop(Mat& src, Mat& dstImg)//上下切割
+int cutTop(Mat& src, Mat& topImg, Mat& bottomImg)//上下切割
 {
 	int top = 0, bottom = src.rows;
 
@@ -541,7 +545,7 @@ int cutTop(Mat& src, Mat& dstImg)//上下切割
 	{
 		int colValue = getRowSum(src, i);
 		//cout <<i<<" th "<< colValue << endl;
-		if (colValue > 0)
+		if (colValue > 550)
 		{
 			top = i;
 			break;
@@ -556,19 +560,17 @@ int cutTop(Mat& src, Mat& dstImg)//上下切割
 	{
 		int colValue = getRowSum(src, i);
 		//cout << i << " th " << colValue << endl;
-		if (colValue == 0)
+		if (colValue < 550)
 		{
 			bottom = i;
 			break;
 		}
 	}
 	int height = bottom - top;
-	Rect rect(0, top, src.cols, height);
-	dstImg = src(rect).clone();
-	//Rect rectTop(0, top, src.cols, height);
-	//topImg = src(rectTop).clone();
-	//Rect rectBottom(0, bottom, src.cols, src.rows-height);
-	//bottomImg = src(rectBottom).clone();
+	Rect rectTop(0, top, src.cols, height);
+	topImg = src(rectTop).clone();
+	Rect rectBottom(0, bottom, src.cols, src.rows - bottom);
+	bottomImg = src(rectBottom).clone();
 	return 0;
 }
 
