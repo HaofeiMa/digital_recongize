@@ -1,16 +1,10 @@
-/*
-尚存问题：
-1. 数字1轮廓提取困难
-*/
-
 #include <opencv2/opencv.hpp>
-//#include <opencv2/cv.h>
-//#include <opencv2/core.hpp>
 #include <opencv2/imgproc/types_c.h>
 #include <iostream>
 
 using namespace cv;
 using namespace std;
+
 
 void binaryProc(Mat& image);	//图像二值化
 void morphTreat(Mat& image);	//形态学处理
@@ -26,13 +20,12 @@ void rotate_Demo(Mat& image, double angle);	//图像旋转
 
 
 int main() {
-	Mat src = imread("E:/Program/OpenCV/vcworkspaces/OGR/images/photo.jpg");	//读取图片
-
 	//摄像头初始化
-	VideoCapture capture(1);	//创建VideoCapture类
+	VideoCapture capture(1);	//创建VideoCapture类，使用外置摄像头（1）
 	int frame_width = capture.get(CAP_PROP_FRAME_WIDTH);	//获取摄像头的宽、高、帧数、FPS
 	int frame_height = capture.get(CAP_PROP_FRAME_HEIGHT);
 	
+
 	//摄像头读取
 	Mat frame;
 	while (capture.isOpened()) {
@@ -46,9 +39,9 @@ int main() {
 		binaryProc(binImg);	//二值化处理
 		morphTreat(binImg);			//形态学处理
 		imshow("binImg", binImg);
-		//colorReverse(grayImg);	//颜色反转
 
-		/*******************************************************/
+
+		/************************** 提取A4纸区域并识别数字 *****************************/
 		double length, area, rectArea;     //定义轮廓周长、面积、外界矩形面积
 		double long2Short = 0.0;           //体态比=长边/短边
 		Rect rect;           //外界矩形
@@ -67,21 +60,20 @@ int main() {
 		findContours(binImg, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
 		for (int i = 0; i < contours.size(); i++)
 		{
-			//绘制轮廓的最小外结矩形  
-			//RotatedRect rect1 = minAreaRect(contours[i]);
-			length = arcLength(contours[i], true);       //获取轮廓周长
-			area = contourArea(contours[i]);       //获取轮廓面积
-			if (area > 2000 && area < 300000)     //矩形区域面积大小判断
+			//绘制轮廓的最小外接矩形  
+			length = arcLength(contours[i], true);      //获取轮廓周长
+			area = contourArea(contours[i]);			//获取轮廓面积
+			if (area > 2000 && area < 300000)			//矩形区域面积大小判断，符合条件的继续
 			{
-				rect = boundingRect(contours[i]);//计算矩形边界
-				boxTemp = minAreaRect(contours[i]);  //获取轮廓的矩形
-				boxPoints(boxTemp, pts);              //获取矩形四个顶点坐标（左上，右上，右下，左下）
-				for (int row = 0; row < pts.rows; row++) {
+				rect = boundingRect(contours[i]);		//计算矩形边界
+				boxTemp = minAreaRect(contours[i]);		//获取轮廓的矩形
+				boxPoints(boxTemp, pts);				//获取矩形四个顶点坐标（左上，右上，右下，左下）
+				for (int row = 0; row < pts.rows; row++) {		//从列表中依次读出四个顶点坐标
 					pt[row].x = pts.at<uchar>(row, 0);
 					pt[row].y = pts.at<uchar>(row, 1);
 				}
-				angleTemp = boxTemp.angle;                 //得到倾斜角度
-				if (angleTemp > 45) {
+				angleTemp = boxTemp.angle;              //得到倾斜角度
+				if (angleTemp > 45) {					//对于逆时针偏转的情况，倾斜角度为-(90-angle)
 					angleTemp = angleTemp - 90;
 				}
 				
@@ -89,41 +81,45 @@ int main() {
 				axisShortTemp = sqrt(pow(pt[2].x - pt[1].x, 2) + pow(pt[2].y - pt[1].y, 2)); //计算短轴（勾股定理）
 
 
-				if (axisShortTemp > axisLongTemp)   //短轴大于长轴，交换数据
+				if (axisShortTemp > axisLongTemp)		//如果短轴大于长轴，交换数据
 				{
 					LengthTemp = axisLongTemp;
 					axisLongTemp = axisShortTemp;
 					axisShortTemp = LengthTemp;
 				}
 
-				rectArea = axisLongTemp * axisShortTemp;  //计算矩形的面积
+				rectArea = axisLongTemp * axisShortTemp;	//计算矩形的实际面积
 
-				long2Short = axisLongTemp / axisShortTemp; //计算长宽比
+				long2Short = axisLongTemp / axisShortTemp;	//计算长宽比
+				
+				// 长宽比A4纸为1.414，利用长宽比、矩形面积和短边长度作为限制条件
 				if (long2Short > 1 && long2Short < 1.8  && rectArea > 5000 && rectArea < 300000 && axisShortTemp > 50)
 				{
-					rectangle(frame, rect, Scalar(0, 0, 255), 2, 8, 0);
-					if (rect.width > 100 && rect.height > 100 && axisShortTemp>100) {
+					rectangle(frame, rect, Scalar(0, 0, 255), 2, 8, 0);		//在摄像头图像中画出矩形区域
+					if (rect.width > 100 && rect.height > 100 && axisShortTemp>100) {	//缩小矩形范围，便于数字识别
 						rect.x += 40;
 						rect.y += 40;
 						rect.width -= 40;
 						rect.height -= 40;
 					}
-					imshow("Video", frame);    //显示最终结果图
-					location_x = rect.x + rect.width / 2;
+					imshow("Video", frame);					//显示摄像头拍摄画面
+					location_x = rect.x + rect.width / 2;	//获得矩形中心坐标，即A4纸中心坐标
 					location_y = rect.y + rect.height / 2;
-					Mat a4Img = frame(rect);
+					Mat a4Img = frame(rect);				//提取A4纸区域
 					Mat a4binImg;
-					cvtColor(a4Img, a4binImg, CV_BGR2GRAY);   //将形态学处理之后的图像转化为灰度图像
+					cvtColor(a4Img, a4binImg, CV_BGR2GRAY);   //将A4纸区域转化为灰度图像
 					threshold(a4binImg, a4binImg, 120, 255, THRESH_BINARY); //灰度图像二值化
-					colorReverse(a4binImg);
-					rotate_Demo(a4binImg, angleTemp);
-					//imshow("A4", a4binImg);
-					/********************  数字识别  *********************/
+					colorReverse(a4binImg);					//颜色反转
+					rotate_Demo(a4binImg, angleTemp);		//根据前所计算角度，对图像进行旋转，保证数字水平存在
+					imshow("A4", a4binImg);
+
+					/********************  数字识别方法1：轮廓提取法  *********************/
+					
+					//找到各数字所在轮廓，并绘制矩形
 					vector<vector<Point>> contours_rec;  //定义轮廓和层次结构
 					vector<Vec4i> hierarchy_rec;
 					findContours(a4binImg, contours_rec, hierarchy_rec, RETR_EXTERNAL, CHAIN_APPROX_NONE); //寻找轮廓
 					int i = 0;
-					Point2f pp[5][4];   //定义点集
 					vector<vector<Point>>::iterator It;
 					Rect a4rect[15];
 					for (It = contours_rec.begin(); It < contours_rec.end(); It++) {                        //画出包围数字的最小矩形
@@ -138,22 +134,20 @@ int main() {
 						}
 					}
 
-					imshow("A4", a4binImg);
-
-
+					//对所有找到的轮廓逐一识别
 					Mat num[20];
-					int output1[3] = {-1,-1,-1};
+					int output1[3] = {-1,-1,-1};	//分别存储识别的三个数字
 					int output1_flag = 0;
 					int matchingNum = 0;
 					int matchingRate = 0;
 					int matchflag = 0;
 					for (int j = 0; j < i; j++) {
-						a4binImg(a4rect[j]).copyTo(num[j]);
+						a4binImg(a4rect[j]).copyTo(num[j]);		//提取包围数字的矩形区域至num[j]
 						imshow("num", num[j]);
-						imgMatch(num[j], matchingRate, matchingNum);
+						imgMatch(num[j], matchingRate, matchingNum);	//数字匹配
 						if (matchingRate < 400000) {
-							output1[output1_flag++] = matchingNum;
-							if (output1_flag>=3) {
+							output1[output1_flag++] = matchingNum;	//将识别到的数字顺序存入数组
+							if (output1_flag>=3) {		//当识别到全部三个数字时打印输出
 								cout << "识别数字：" << output1[0] * 100 + output1[1] * 10 + output1[2] << "\t坐标位置：[" << location_x << ", " << location_y << "]" << endl;
 								output1_flag = 0;
 								output1[0] = -1;
@@ -165,140 +159,23 @@ int main() {
 						}
 					}
 					/*****************************************************/
-
-					//内部再识别
-					/*
-					resize(a4binImg, a4binImg, Size(640, 640 * a4binImg.rows / a4binImg.cols));
-					double length_inside, area_inside, rectArea_inside;     //定义轮廓周长、面积、外界矩形面积
-					double long2Short_inside = 0.0;           //体态比=长边/短边
-					Rect rect_inside;           //外界矩形
-					RotatedRect box_inside, boxTemp_inside;  //外接矩形
-					CvPoint2D32f pt_inside[4];    //矩形定点变量
-					Mat pts_inside;    //矩形定点变量
-					double axisLong_inside = 0.0, axisShort_inside = 0.0;        //矩形的长边和短边
-					double axisLongTemp_inside = 0.0, axisShortTemp_inside = 0.0;//矩形的长边和短边
-					double LengthTemp_inside;     //中间变量
-					vector<vector<Point>> contours_inside;
-					vector<Vec4i>hierarchy_inside;
-					findContours(a4binImg, contours_inside, hierarchy_inside, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_NONE);
-					for (int i = 0; i < contours_inside.size(); i++)
-					{
-						//绘制轮廓的最小外结矩形  
-						//RotatedRect rect1 = minAreaRect(contours[i]);
-						length_inside = arcLength(contours_inside[i], true);       //获取轮廓周长
-						area_inside = contourArea(contours_inside[i]);       //获取轮廓面积
-						if (area_inside > 2000 && area_inside < 300000)     //矩形区域面积大小判断
-						{
-							rect_inside = boundingRect(contours_inside[i]);//计算矩形边界
-							boxTemp_inside = minAreaRect(contours_inside[i]);  //获取轮廓的矩形
-							boxPoints(boxTemp_inside, pts_inside);              //获取矩形四个顶点坐标（左上，右上，右下，左下）
-							for (int row = 0; row < pts_inside.rows; row++) {
-								pt_inside[row].x = pts_inside.at<uchar>(row, 0);
-								pt_inside[row].y = pts_inside.at<uchar>(row, 1);
-							}
-
-							axisLongTemp_inside = sqrt(pow(pt_inside[1].x - pt_inside[0].x, 2) + pow(pt_inside[1].y - pt_inside[0].y, 2));  //计算长轴（勾股定理）
-							axisShortTemp_inside = sqrt(pow(pt_inside[2].x - pt_inside[1].x, 2) + pow(pt_inside[2].y - pt_inside[1].y, 2)); //计算短轴（勾股定理）
+							
 
 
-							if (axisShortTemp_inside > axisLongTemp_inside)   //短轴大于长轴，交换数据
-							{
-								LengthTemp_inside = axisLongTemp_inside;
-								axisLongTemp_inside = axisShortTemp_inside;
-								axisShortTemp_inside = LengthTemp_inside;
-							}
+					/********************  数字识别方法1：行切法  *********************/
 
-							rectArea_inside = axisLongTemp_inside * axisShortTemp_inside;  //计算矩形的面积
-
-							long2Short_inside = axisLongTemp_inside / axisShortTemp_inside; //计算长宽比
-							if (long2Short_inside > 1 && long2Short_inside < 1.8 && rectArea_inside > 5000 && rectArea_inside < 300000 && axisShortTemp_inside > 50)
-							{
-								rectangle(a4binImg, rect_inside, Scalar(0, 0, 255), 2, 8, 0);
-								if (rect_inside.width > 100 && rect_inside.height > 100 && axisShortTemp_inside > 100) {
-									rect_inside.x += 30;
-									rect_inside.y += 30;
-									rect_inside.width -= 30;
-									rect_inside.height -= 30;
-								}
-								imshow("a4binImg", a4binImg);    //显示最终结果图
-
-								Mat a4binImg_inside = a4binImg(rect_inside);
-								imshow("a4binImg_inside", a4binImg_inside);
-								
-								//数字识别
-								vector<vector<Point>> contours_rec;  //定义轮廓和层次结构
-								vector<Vec4i> hierarchy_rec;
-								findContours(a4binImg_inside, contours_rec, hierarchy_rec, RETR_EXTERNAL, CHAIN_APPROX_NONE); //寻找轮廓
-								int i = 0;
-								Point2f pp[5][4];   //定义点集
-								vector<vector<Point>>::iterator It;
-								Rect a4rect[15];
-								for (It = contours_rec.begin(); It < contours_rec.end(); It++) {                        //画出包围数字的最小矩形
-									a4rect[i].x = (float)boundingRect(*It).tl().x;
-									a4rect[i].y = (float)boundingRect(*It).tl().y;
-									a4rect[i].width = (float)boundingRect(*It).br().x - (float)boundingRect(*It).tl().x;
-									a4rect[i].height = (float)boundingRect(*It).br().y - (float)boundingRect(*It).tl().y;
-									if ((a4rect[i].height > 80) && (a4rect[i].width > 50) && (a4rect[i].height < 300) && (a4rect[i].width < 300)) {
-										rectangle(a4binImg_inside, a4rect[i], Scalar(0, 0, 0), 0, 8, 0);
-										i++;
-									}
-								}
-
-								//imshow("A4", a4binImg_inside);
-
-								Mat num[20];
-								int output[3] = { -1,-1,-1 };
-								int output_flag = 0;
-								int matchingNum = 0;
-								int matchingRate = 0;
-								for (int j = 0; j < i; j++) {
-									a4binImg_inside(a4rect[j]).copyTo(num[j]);
-									imshow("num", num[j]);
-									imgMatch(num[j], matchingRate, matchingNum);
-									if (matchingRate < 400000) {
-										output[output_flag] = matchingNum;
-										output_flag++;
-										if (output[0] >= 0 && output[1] >= 0 && output[2] >= 0) {
-											cout << output[0] * 100 + output[1] * 10 + output[2] << endl;
-											output_flag = 0;
-											output[0] = -1;
-											output[1] = -1;
-											output[2] = -1;
-										}
-										//imwrite(to_string(matchingNum) + ".jpg", num[j]);
-									}
-								}
-								cout << endl;
-
-
-
-
-								box_inside = boxTemp_inside;
-								axisLong_inside = axisLongTemp_inside;
-								axisShort_inside = axisShortTemp_inside;
-								//cout << "倾斜角度：" << angle << endl;
-							}
-
-
-						}
-					}
-					*/
-
-								
-					//行切识别数字
+					//如果上一种方法没有识别成功
 					if (matchflag == 0) {
 						Mat leftImg, rightImg, topImg, bottomImg;
-						int topRes = cutTop(a4binImg, topImg, bottomImg);
+						int topRes = cutTop(a4binImg, topImg, bottomImg);	//对提取的A4纸区域逐行扫描，获得行像素之和>550的部分topImg，以及剩余部分bottomImg
 						int matchNum = -1, matchRate = 10e6;
-						int output2[3] = { -1,-1,-1 };
+						int output2[3] = { -1,-1,-1 };	//分别存储三个数字
 						int output2_flag = 0;
-						while (topRes == 0)
+						while (topRes == 0)		//当仍存在行像素和>550的部分时
 						{
-							int leftRes = cutLeft(topImg, leftImg, rightImg);
-							while (leftRes == 0) {
-								imgMatch(leftImg, matchRate, matchNum);//数字识别
-								//getSubtract(topImg);
-								//imshow("num", leftImg);
+							int leftRes = cutLeft(topImg, leftImg, rightImg);	//对行像素之和>550的部分topImg逐列扫描，获得列像素之和>550的部分leftImg，以及剩余部分rightImg
+							while (leftRes == 0) {	//当仍存在列像素和>550的部分时
+								imgMatch(leftImg, matchRate, matchNum);	//数字识别
 								if (matchRate < 200000) {
 									output2[output2_flag++] = matchNum;
 									if (output2_flag >= 3) {
@@ -310,27 +187,24 @@ int main() {
 									}
 								}
 								Mat srcTmp = rightImg.clone();
-								leftRes = cutLeft(srcTmp, leftImg, rightImg);
+								leftRes = cutLeft(srcTmp, leftImg, rightImg);	//对剩余部分rightImg继续逐列扫描
 							}
 							Mat srcTmp = bottomImg.clone();
-							topRes = cutTop(srcTmp, topImg, bottomImg);
+							topRes = cutTop(srcTmp, topImg, bottomImg);			//对剩余部分bottomImg继续逐行扫描
 							output2_flag = 0;
 							output2[0] = -1;
 							output2[1] = -1;
 							output2[2] = -1;
 						}
 					}
+					/*****************************************************/
 					
-					
-
 
 					box = boxTemp;
 					angle = angleTemp;
 					axisLong = axisLongTemp;
 					axisShort = axisShortTemp;
 				}
-				
-
 			}
 		}
 
@@ -347,6 +221,7 @@ int main() {
 	destroyAllWindows();;
 	return 0;
 }
+
 
 
 //图像二值化
@@ -369,6 +244,7 @@ void binaryProc(Mat& image) {
 			}
 		}
 	}
+
 
 	//二值化处理
 	unsigned char pixelB, pixelG, pixelR;  //记录各通道值
@@ -427,6 +303,7 @@ void morphTreat(Mat& binImg) {
 	threshold(binImg, binImg, 100, 255, THRESH_BINARY); //灰度图像二值化
 }
 
+
 //颜色反转
 void colorReverse(Mat& image) {
 	for (int row = 0; row < image.rows; row++) {
@@ -436,6 +313,7 @@ void colorReverse(Mat& image) {
 		}
 	}
 }
+
 
 //获得列像素和
 int getColSum(Mat src, int col)
@@ -450,6 +328,7 @@ int getColSum(Mat src, int col)
 	return sum;
 }
 
+
 //获得行像素和
 int getRowSum(Mat src, int row)
 {
@@ -462,6 +341,7 @@ int getRowSum(Mat src, int row)
 	}
 	return sum;
 }
+
 
 //获取所有像素点和
 int getPixelSum(Mat& image){
@@ -496,7 +376,8 @@ int imgMatch(Mat& image, int& rate, int& num) {
 	}
 }
 
-//数字切割
+
+//数字左右切割
 int cutLeft(Mat& src, Mat& leftImg, Mat& rightImg)
 {
 	int left = 0, right = src.cols;
@@ -536,7 +417,9 @@ int cutLeft(Mat& src, Mat& leftImg, Mat& rightImg)
 	return 0;
 }
 
-int cutTop(Mat& src, Mat& topImg, Mat& bottomImg)//上下切割
+
+//上下切割
+int cutTop(Mat& src, Mat& topImg, Mat& bottomImg)
 {
 	int top = 0, bottom = src.rows;
 
@@ -600,6 +483,7 @@ int getSubtract(Mat& src) //两张图片相减
 	printf("匹配到第%d个模板匹配的数字是%d\n", serieNum, serieNum);
 	return serieNum;
 }
+
 
 //图像旋转
 void rotate_Demo(Mat& image, double angle) {
