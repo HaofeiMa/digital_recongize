@@ -1,0 +1,8 @@
+﻿  knn.cpp
+E:\Program\OpenCV\vcworkspaces\knn_test\knn_test\knn.cpp(99,16): warning C4244: “初始化”: 从“float”转换到“int”，可能丢失数据
+  正在生成代码
+  174 of 359 functions (48.5%) were compiled, the rest were copied from previous compilation.
+    91 functions were new in current compilation
+    22 functions had inline decision re-evaluated but remain unchanged
+  已完成代码的生成
+  knn_test.vcxproj -> E:\Program\OpenCV\vcworkspaces\knn_test\x64\Release\knn_test.exe
